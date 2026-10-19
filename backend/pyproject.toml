@@ -27,4 +27,5 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "--cov=app --cov-report=term-missing --cov-fail-under=90"
