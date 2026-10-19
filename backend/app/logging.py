@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import sys
 from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
@@ -8,16 +9,33 @@ from threading import Lock
 from uuid import UUID
 
 from app.config import Settings
+from app.connectors.types import ConnectorKind, ErrorCode
 from app.persistence.models import AuditAction
 
 _setup_lock = Lock()
 # Only fixed event names and explicitly approved metadata can reach the output.
-_EVENTS = {"request_completed", "request_failed", "application_started", "audit_event"}
+_CONNECTOR_EVENTS = {
+    "connector_started",
+    "connector_page_fetched",
+    "connector_retry",
+    "connector_completed",
+    "connector_failed",
+}
+_EVENTS = {
+    "request_completed",
+    "request_failed",
+    "application_started",
+    "audit_event",
+} | _CONNECTOR_EVENTS
 
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
-        event = record.msg if record.msg in _EVENTS else "application_event"
+        event = (
+            record.msg
+            if isinstance(record.msg, str) and record.msg in _EVENTS
+            else "application_event"
+        )
         data: dict[str, object] = {
             "timestamp": datetime.fromtimestamp(record.created, UTC).isoformat(),
             "severity": record.levelname,
@@ -42,6 +60,37 @@ class JsonFormatter(logging.Formatter):
                 value = getattr(record, key, None)
                 if isinstance(value, UUID):
                     data[key] = str(value)
+        if event in _CONNECTOR_EVENTS:
+            identifier = getattr(record, "request_id", None)
+            data["request_id"] = str(identifier) if isinstance(identifier, UUID) else None
+            duration = getattr(record, "duration_ms", None)
+            data["duration_ms"] = (
+                duration
+                if isinstance(duration, (int, float))
+                and math.isfinite(duration)
+                and 0 <= duration <= 300_000
+                else None
+            )
+            kind = getattr(record, "connector_kind", None)
+            if isinstance(kind, ConnectorKind):
+                data["connector"] = kind.value
+            for key in ("page_number", "record_count"):
+                value = getattr(record, key, None)
+                if type(value) is int and 0 <= value <= 10_000:
+                    data[key] = value
+            category = getattr(record, "status_category", None)
+            if isinstance(category, str) and category in {
+                "local",
+                "transport",
+                "http_2xx",
+                "http_3xx",
+                "http_4xx",
+                "http_5xx",
+            }:
+                data["status_category"] = category
+            error = getattr(record, "connector_error", None)
+            if isinstance(error, ErrorCode):
+                data["error_code"] = error.value
         return json.dumps(data)
 
 
@@ -69,3 +118,11 @@ def configure_logging(settings: Settings) -> logging.Logger:
             handler.setFormatter(JsonFormatter())
             logger.addHandler(handler)
         return logger
+
+
+def suppress_http_transport_logs() -> None:
+    """DataBridge owns HTTP telemetry; third-party debug/request logs contain raw URLs."""
+    for name in ("httpx", "httpcore"):
+        transport_logger = logging.getLogger(name)
+        transport_logger.handlers = [logging.NullHandler()]
+        transport_logger.propagate = False

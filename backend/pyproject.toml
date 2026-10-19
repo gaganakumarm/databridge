@@ -6,10 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "databridge-backend"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["fastapi>=0.121,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.7,<3", "SQLAlchemy>=2.0.36,<2.1", "alembic>=1.16,<2", "psycopg[binary]>=3.2,<4"]
+dependencies = ["fastapi>=0.121,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.7,<3", "SQLAlchemy>=2.0.36,<2.1", "alembic>=1.16,<2", "psycopg[binary]>=3.2,<4", "httpx>=0.28,<1"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "pytest-cov>=6,<8", "httpx>=0.28,<1", "ruff>=0.11,<1", "mypy>=1.15,<2", "PyYAML>=6,<7", "types-PyYAML>=6,<7"]
+dev = ["pytest>=8,<10", "pytest-cov>=6,<8", "ruff>=0.11,<1", "mypy>=1.15,<2", "PyYAML>=6,<7", "types-PyYAML>=6,<7"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
