@@ -5,12 +5,14 @@ from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from threading import Lock
+from uuid import UUID
 
 from app.config import Settings
+from app.persistence.models import AuditAction
 
 _setup_lock = Lock()
 # Only fixed event names and explicitly approved metadata can reach the output.
-_EVENTS = {"request_completed", "request_failed", "application_started"}
+_EVENTS = {"request_completed", "request_failed", "application_started", "audit_event"}
 
 
 class JsonFormatter(logging.Formatter):
@@ -28,6 +30,18 @@ class JsonFormatter(logging.Formatter):
             data["status_code"] = status
         if event == "request_failed":
             data["error"] = {"code": "internal_error", "detail": "[REDACTED]"}
+        if event == "audit_event":
+            try:
+                data["request_id"] = str(UUID(str(getattr(record, "request_id", ""))))
+            except ValueError:
+                data["request_id"] = None
+            action = getattr(record, "audit_action", None)
+            if isinstance(action, AuditAction):
+                data["action"] = action.value
+            for key in ("audit_id", "entity_id"):
+                value = getattr(record, key, None)
+                if isinstance(value, UUID):
+                    data[key] = str(value)
         return json.dumps(data)
 
 

@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from time import perf_counter
 from typing import Literal
 from uuid import uuid4
@@ -9,6 +11,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.config import Settings
 from app.logging import configure_logging
+from app.persistence.database import Database
 
 
 class HealthResponse(BaseModel):
@@ -27,6 +30,7 @@ class RequestContextMiddleware:
             return
         # Generate server-owned IDs; never trust or log caller-provided identifiers.
         request_id = str(uuid4())
+        scope.setdefault("state", {})["request_id"] = request_id
         started = perf_counter()
         status = 500
         response_started = False
@@ -74,7 +78,18 @@ class RequestContextMiddleware:
 def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings if settings is not None else Settings()
     logger = configure_logging(config)
-    application = FastAPI(title="DataBridge", debug=False)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        database = Database(config) if config.database_url is not None else None
+        app.state.database = database
+        try:
+            yield
+        finally:
+            if database is not None:
+                database.dispose()
+
+    application = FastAPI(title="DataBridge", debug=False, lifespan=lifespan)
     application.add_middleware(RequestContextMiddleware, logger=logger)
 
     @application.get("/health", response_model=HealthResponse)
